@@ -5,6 +5,7 @@ import android.accessibilityservice.GestureDescription
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.Path
+import android.graphics.Rect
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
@@ -101,6 +102,48 @@ class TitanAccessibility : AccessibilityService() {
                 onDone()
             }, 900)
         }, 1300)
+    }
+
+    class Target(val rect: Rect, val node: AccessibilityNodeInfo)
+
+    private var targets: List<Target> = emptyList()
+
+    /** Ekrandaki tıklanabilir öğeleri üstten alta, soldan sağa sıralı toplar. */
+    fun collectTargets(): List<Target> {
+        val root = rootInActiveWindow ?: return emptyList()
+        val m = resources.displayMetrics
+        val out = ArrayList<Target>()
+
+        fun walk(n: AccessibilityNodeInfo?) {
+            if (n == null || out.size >= 60) return
+            if (!n.isVisibleToUser) return
+            val r = Rect()
+            n.getBoundsInScreen(r)
+            val big = r.width() > m.widthPixels * 0.95 && r.height() > m.heightPixels * 0.6
+            if ((n.isClickable || n.isCheckable) && !big && r.width() > 24 && r.height() > 24 &&
+                out.none { Math.abs(it.rect.left - r.left) < 8 && Math.abs(it.rect.top - r.top) < 8 }
+            ) {
+                out.add(Target(r, n))
+            }
+            for (i in 0 until n.childCount) walk(n.getChild(i))
+        }
+
+        walk(root)
+        out.sortWith(compareBy<Target>({ it.rect.top / 40 }, { it.rect.left }))
+        targets = out
+        return out
+    }
+
+    /** i. numaralı öğeye tıkla (0'dan başlar). */
+    fun clickTarget(i: Int): Boolean {
+        val t = targets.getOrNull(i) ?: return false
+        if (t.node.performAction(AccessibilityNodeInfo.ACTION_CLICK)) return true
+        val p = Path()
+        p.moveTo(t.rect.exactCenterX(), t.rect.exactCenterY())
+        val g = GestureDescription.Builder()
+            .addStroke(GestureDescription.StrokeDescription(p, 0, 60))
+            .build()
+        return dispatchGesture(g, null, null)
     }
 
     /** Ekran görüntüsünü JPEG/base64 olarak verir (Android 11+). */

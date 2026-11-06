@@ -169,7 +169,8 @@ class MainActivity : Activity() {
             tv(
                 "Komutlar: kapat · geri · ana ekran · aşağı/yukarı/sağa/sola · open keyboard · " +
                     "sesli mod · ekrana bak · screenshot · close the screen · shut up · " +
-                    "privacy disorder · game mode · yaz … · YouTube aç · hafızayı sil",
+                    "privacy disorder · game mode · yaz … · YouTube aç · hafızayı sil · " +
+                    "numaralar (sonra \"5\" ya da \"tıkla 5\") · numaraları gizle",
                 12f, "#5E7186"
             ).apply { setPadding(0, dp(24), 0, 0) }
         )

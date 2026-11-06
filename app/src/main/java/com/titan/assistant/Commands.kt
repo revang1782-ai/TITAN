@@ -5,6 +5,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 
 sealed class Cmd {
+    object Noop : Cmd()
     object Close : Cmd()
     object Lock : Cmd()
     object Back : Cmd()
@@ -18,6 +19,9 @@ sealed class Cmd {
     object GameMode : Cmd()
     object LookScreen : Cmd()
     object Forget : Cmd()
+    object ShowNumbers : Cmd()
+    object HideNumbers : Cmd()
+    data class ClickNum(val n: Int) : Cmd()
     data class Scroll(val dir: String) : Cmd()
     data class OpenApp(val name: String) : Cmd()
     data class TypeText(val text: String) : Cmd()
@@ -38,7 +42,46 @@ object Commands {
 
     private fun has(t: String, vararg k: String) = k.any { t.contains(it) }
 
-    fun parse(t: String, raw: String): Cmd? {
+    private val units = mapOf(
+        "bir" to 1, "iki" to 2, "uc" to 3, "dort" to 4, "bes" to 5,
+        "alti" to 6, "yedi" to 7, "sekiz" to 8, "dokuz" to 9,
+        "one" to 1, "two" to 2, "three" to 3, "four" to 4, "five" to 5,
+        "six" to 6, "seven" to 7, "eight" to 8, "nine" to 9, "ten" to 10
+    )
+    private val tens = mapOf("on" to 10, "yirmi" to 20, "otuz" to 30, "kirk" to 40)
+
+    private fun number(s: String): Int? {
+        s.toIntOrNull()?.let { return it }
+        units[s]?.let { return it }
+        tens[s]?.let { return it }
+        val p = s.split(" ")
+        if (p.size == 2) {
+            val a = tens[p[0]]
+            val b = units[p[1]]
+            if (a != null && b != null && b < 10) return a + b
+        }
+        return null
+    }
+
+    fun parse(t0: String, raw: String, numbersActive: Boolean): Cmd? {
+        // "Titan geri" gibi cümlelerde baştaki "titan"ı at.
+        val t = if (t0 == "titan") "" else t0.removePrefix("titan ").trim()
+        if (t.isEmpty()) return Cmd.Noop
+
+        // Numara modu açıkken: "5", "tıkla 5", "click five"
+        if (numbersActive) {
+            val body = t.removePrefix("tikla ").removePrefix("click ").removePrefix("bas ")
+                .removePrefix("sec ").removePrefix("select ").removePrefix("numara ")
+                .removePrefix("number ").trim()
+            number(body)?.let { return Cmd.ClickNum(it) }
+        }
+
+        if (has(t, "numaralari gizle", "numaralari kapat", "numarayi kapat", "hide numbers", "numaralar kapat"))
+            return Cmd.HideNumbers
+        if (t in setOf("numara", "numaralar", "numaralari goster", "numaralari ac", "show numbers", "numbers", "sayilar", "tikla") ||
+            has(t, "numaralandir")
+        ) return Cmd.ShowNumbers
+
         if (t in setOf("kapat", "close", "kapan", "tamam kapat", "close it", "kapat titan")) return Cmd.Close
         if (has(t, "close the screen", "ekrani kapat", "ekran kapat", "lock screen", "ekrani kilitle")) return Cmd.Lock
         if (has(t, "shut up", "power off", "telefonu kapat")) return Cmd.PowerOff
@@ -50,14 +93,15 @@ object Commands {
         if (has(t, "screenshot", "ekran goruntusu")) return Cmd.Screenshot
         if (has(t, "hafizayi sil", "forget everything")) return Cmd.Forget
 
+        // Ses tanıma bazen İngilizce kelimeleri yanlış duyar; yaygın yanlışları da kabul et.
         when (t) {
-            "geri", "back" -> return Cmd.Back
-            "ana ekran", "home" -> return Cmd.Home
-            "son uygulamalar", "recents" -> return Cmd.Recents
-            "asagi", "down", "scroll down" -> return Cmd.Scroll("down")
+            "geri", "back", "berk", "bak", "bek", "beck", "bag", "bec", "bekk" -> return Cmd.Back
+            "ana ekran", "ana sayfa", "home", "hom", "hoom", "hum", "houm" -> return Cmd.Home
+            "son uygulamalar", "recents", "recent" -> return Cmd.Recents
+            "asagi", "down", "dawn", "daun", "scroll down" -> return Cmd.Scroll("down")
             "yukari", "up", "scroll up" -> return Cmd.Scroll("up")
-            "saga", "right" -> return Cmd.Scroll("right")
-            "sola", "left" -> return Cmd.Scroll("left")
+            "saga", "right", "write", "rayt" -> return Cmd.Scroll("right")
+            "sola", "left", "lift" -> return Cmd.Scroll("left")
         }
 
         if (t.startsWith("yaz ") || t.startsWith("type ")) {

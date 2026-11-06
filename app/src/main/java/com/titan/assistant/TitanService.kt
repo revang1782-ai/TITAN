@@ -48,6 +48,9 @@ class TitanService : Service() {
     private var wakeReady = false
     private var pending: (() -> Unit)? = null
     private val history = ArrayList<Pair<String, String>>()
+    private lateinit var numbers: NumberOverlay
+    private var numbersActive = false
+    private val hideNumbersRunnable = Runnable { hideNumbers() }
 
     override fun onBind(i: Intent?): IBinder? = null
 
@@ -58,6 +61,7 @@ class TitanService : Service() {
         overlay = Overlay(this)
         overlay.onSend = { t -> main.post { handleInput(t) } }
         overlay.onClose = { main.post { endSession() } }
+        numbers = NumberOverlay(this)
 
         tts = TextToSpeech(this) { status ->
             if (status == TextToSpeech.SUCCESS) {
@@ -110,6 +114,7 @@ class TitanService : Service() {
         tts?.stop()
         tts?.shutdown()
         overlay.hide()
+        numbers.hide()
         super.onDestroy()
     }
 
@@ -191,6 +196,7 @@ class TitanService : Service() {
         tts?.stop()
         textMode = false
         pending = null
+        hideNumbers()
         overlay.hide()
         wake.stop()
         state = State.IDLE
@@ -250,6 +256,16 @@ class TitanService : Service() {
             putExtra(RecognizerIntent.EXTRA_LANGUAGE, "tr-TR")
             putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
             putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 1500L)
+            if (Build.VERSION.SDK_INT >= 33) {
+                putStringArrayListExtra(
+                    RecognizerIntent.EXTRA_BIASING_STRINGS,
+                    arrayListOf(
+                        "back", "home", "open keyboard", "screenshot", "scroll down",
+                        "privacy disorder", "game mode", "close the screen", "shut up",
+                        "show numbers", "click"
+                    )
+                )
+            }
         }
         recognizer = r
         r.startListening(i)
@@ -268,7 +284,7 @@ class TitanService : Service() {
             return
         }
 
-        val cmd = Commands.parse(t, raw)
+        val cmd = Commands.parse(t, raw, numbersActive)
         if (cmd != null) {
             runCommand(cmd, raw)
         } else {
@@ -277,6 +293,12 @@ class TitanService : Service() {
     }
 
     private fun acc(): TitanAccessibility? = TitanAccessibility.instance
+
+    private fun hideNumbers() {
+        main.removeCallbacks(hideNumbersRunnable)
+        numbers.hide()
+        numbersActive = false
+    }
 
     private fun noAcc() = say("Erişilebilirlik izni kapalı. Titan uygulamasından aç.")
 
@@ -288,6 +310,11 @@ class TitanService : Service() {
     private fun runCommand(cmd: Cmd, raw: String) {
         when (cmd) {
             Cmd.Close -> endSession()
+            Cmd.Noop -> relisten()
+            Cmd.HideNumbers -> {
+                hideNumbers()
+                done()
+            }
             Cmd.Keyboard -> {
                 textMode = true
                 recognizer?.destroy()
@@ -356,6 +383,25 @@ class TitanService : Service() {
                     Cmd.Home -> a.home()
                     Cmd.Recents -> a.recents()
                     Cmd.Screenshot -> a.screenshot()
+                    Cmd.ShowNumbers -> {
+                        val ts = a.collectTargets()
+                        if (ts.isEmpty()) {
+                            say("Ekranda tıklanabilir bir şey bulamadım.")
+                            return
+                        }
+                        numbers.show(ts.map { it.rect })
+                        numbersActive = true
+                        main.removeCallbacks(hideNumbersRunnable)
+                        main.postDelayed(hideNumbersRunnable, 45000)
+                    }
+                    is Cmd.ClickNum -> {
+                        if (a.clickTarget(cmd.n - 1)) {
+                            hideNumbers()
+                        } else {
+                            say("Bu numara yok.")
+                            return
+                        }
+                    }
                     is Cmd.Scroll -> a.swipe(cmd.dir)
                     is Cmd.TypeText -> if (!a.typeText(cmd.text)) {
                         say("Yazı alanı seçili değil.")
