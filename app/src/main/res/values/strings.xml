@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Titan</string>
+    <string name="acc_desc">Titan, sesli komutlarınla ekranı kaydırır, geri/ana ekran tuşlarına basar, uygulama açar ve yazı yazar.</string>
+</resources>
